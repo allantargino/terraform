@@ -1365,11 +1365,26 @@ func (m schemaMap) validate(
 			"%q: this field cannot be set", k)}
 	}
 
-	if raw == config.UnknownVariableValue {
-		// If the value is unknown then we can't validate it yet.
-		// In particular, this avoids spurious type errors where downstream
-		// validation code sees UnknownVariableValue as being just a string.
-		return nil, nil
+	// If the value is unknown then we can't validate it yet.
+	// In particular, this avoids spurious type errors where downstream
+	// validation code sees UnknownVariableValue as being just a string.
+	switch raw := raw.(type) {
+	case string:
+		if raw == config.UnknownVariableValue {
+			return nil, nil
+		}
+	case []interface{}:
+		for _, v := range raw {
+			if v == config.UnknownVariableValue {
+				return nil, nil
+			}
+		}
+	case map[string]interface{}:
+		for _, v := range raw {
+			if v == config.UnknownVariableValue {
+				return nil, nil
+			}
+		}
 	}
 
 	err := m.validateConflictingAttributes(k, schema, c)
