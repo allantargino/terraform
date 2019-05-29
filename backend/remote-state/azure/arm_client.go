@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/profiles/2017-03-09/resources/mgmt/resources"
 	armStorage "github.com/Azure/azure-sdk-for-go/profiles/2017-03-09/storage/mgmt/storage"
 	armKeyVault "github.com/Azure/azure-sdk-for-go/services/keyvault/2016-10-01/keyvault"
+
 	"github.com/Azure/azure-sdk-for-go/storage"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
