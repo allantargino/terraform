@@ -47,18 +47,6 @@ func buildArmClient(config BackendConfig) (*ArmClient, error) {
 		storageAccountName: config.StorageAccountName,
 	}
 
-	// if we have an Access Key - we don't need the other clients
-	if config.AccessKey != "" {
-		client.accessKey = config.AccessKey
-		return &client, nil
-	}
-
-	// likewise with a SAS token
-	if config.SasToken != "" {
-		client.sasToken = config.SasToken
-		return &client, nil
-	}
-
 	builder := authentication.Builder{
 		ClientID:                      config.ClientID,
 		ClientSecret:                  config.ClientSecret,
@@ -74,41 +62,9 @@ func buildArmClient(config BackendConfig) (*ArmClient, error) {
 		SupportsManagedServiceIdentity: config.UseMsi,
 		// TODO: support for Client Certificate auth
 	}
-	armConfig, err := builder.Build()
-	if err != nil {
-		return nil, fmt.Errorf("Error building ARM Config: %+v", err)
-	}
-
-	oauthConfig, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, armConfig.TenantID)
-	if err != nil {
-		return nil, err
-	}
-
-	auth, err := armConfig.GetAuthorizationToken(oauthConfig, env.TokenAudience)
-	if err != nil {
-		return nil, err
-	}
-
-	accountsClient := armStorage.NewAccountsClientWithBaseURI(env.ResourceManagerEndpoint, armConfig.SubscriptionID)
-	client.configureClient(&accountsClient.Client, auth)
-	client.storageAccountsClient = &accountsClient
-
-	groupsClient := resources.NewGroupsClientWithBaseURI(env.ResourceManagerEndpoint, armConfig.SubscriptionID)
-	client.configureClient(&groupsClient.Client, auth)
-	client.groupsClient = &groupsClient
 
 	if config.KeyVaultKeyIdentifier != "" {
-		vaultEndpoint := strings.TrimSuffix(env.KeyVaultEndpoint, "/")
-		alternateEndpoint, _ := url.Parse("https://login.windows.net/" + armConfig.TenantID + "/oauth2/token")
-
-		oauthConfigKV, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, armConfig.TenantID)
-		if err != nil {
-			return nil, err
-		}
-
-		oauthConfigKV.AuthorizeEndpoint = *alternateEndpoint
-
-		authKV, err := armConfig.GetAuthorizationToken(oauthConfigKV, vaultEndpoint)
+		authKV, err := getAzureKeyVaultAuthorizer(env, builder)
 		if err != nil {
 			return nil, err
 		}
@@ -122,6 +78,31 @@ func buildArmClient(config BackendConfig) (*ArmClient, error) {
 		}
 		client.encClient = encClient
 	}
+
+	// if we have an Access Key - we don't need the other clients
+	if config.AccessKey != "" {
+		client.accessKey = config.AccessKey
+		return &client, nil
+	}
+
+	// likewise with a SAS token
+	if config.SasToken != "" {
+		client.sasToken = config.SasToken
+		return &client, nil
+	}
+
+	auth, armConfig, err := getAzureMgmtAuthorizer(env, builder)
+	if err != nil {
+		return nil, err
+	}
+
+	accountsClient := armStorage.NewAccountsClientWithBaseURI(env.ResourceManagerEndpoint, armConfig.SubscriptionID)
+	client.configureClient(&accountsClient.Client, auth)
+	client.storageAccountsClient = &accountsClient
+
+	groupsClient := resources.NewGroupsClientWithBaseURI(env.ResourceManagerEndpoint, armConfig.SubscriptionID)
+	client.configureClient(&groupsClient.Client, auth)
+	client.groupsClient = &groupsClient
 
 	return &client, nil
 }
@@ -198,4 +179,47 @@ func buildUserAgent() string {
 	}
 
 	return userAgent
+}
+
+func getAzureMgmtAuthorizer(env *azure.Environment, builder authentication.Builder) (*autorest.BearerAuthorizer, *authentication.Config, error) {
+	armConfig, err := builder.Build()
+	if err != nil {
+		return nil, nil, fmt.Errorf("Error building ARM Config: %+v", err)
+	}
+
+	oauthConfig, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, armConfig.TenantID)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	auth, err := armConfig.GetAuthorizationToken(oauthConfig, env.TokenAudience)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return auth, armConfig, nil
+}
+
+func getAzureKeyVaultAuthorizer(env *azure.Environment, builder authentication.Builder) (*autorest.BearerAuthorizer, error) {
+	armConfig, err := builder.Build()
+	if err != nil {
+		return nil, fmt.Errorf("Error building ARM Config: %+v", err)
+	}
+
+	vaultEndpoint := strings.TrimSuffix(env.KeyVaultEndpoint, "/")
+	alternateEndpoint, _ := url.Parse("https://login.windows.net/" + armConfig.TenantID + "/oauth2/token")
+
+	oauthConfigKV, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, armConfig.TenantID)
+	if err != nil {
+		return nil, err
+	}
+
+	oauthConfigKV.AuthorizeEndpoint = *alternateEndpoint
+
+	authKV, err := armConfig.GetAuthorizationToken(oauthConfigKV, vaultEndpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	return authKV, nil
 }

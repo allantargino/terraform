@@ -60,8 +60,7 @@ func (c *RemoteClient) Get() (*remote.Payload, error) {
 	dataProcessed := buf.Bytes()
 	// Decrypt operation if Key Vault key is provided
 	if c.encClient != nil {
-		ctx := context.TODO()
-		dataProcessed, err = c.encClient.DecryptByteBlock(ctx, buf.Bytes())
+		dataProcessed, err = c.encClient.DecryptByteBlock(context.TODO(), buf.Bytes())
 		if err != nil {
 			return nil, fmt.Errorf("Error during decryption: %v", err)
 		}
@@ -84,15 +83,11 @@ func (c *RemoteClient) Put(data []byte) error {
 	setOptions := &storage.SetBlobPropertiesOptions{}
 	putOptions := &storage.PutBlobOptions{}
 
-	ctx := context.TODO()
-
-	fmt.Println(string(data))
-
 	var err error
 	dataProcessed := data
 	// Encrypt operation if Key Vault key is provided
 	if c.encClient != nil {
-		dataProcessed, err = c.encClient.EncryptByteBlock(ctx, data)
+		dataProcessed, err = c.encClient.EncryptByteBlock(context.TODO(), data)
 		if err != nil {
 			return fmt.Errorf("Error during encryption: %v", err)
 		}
