@@ -9,24 +9,38 @@ import (
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/2016-10-01/keyvault"
 )
 
+type EncryptionClient struct {
+	kvClient    *keyvault.BaseClient
+	kvInfo      *KeyVaultKeyInfo
+	kvAlgorithm *KeyVaultAlgorithmParameters
+}
+
 type KeyVaultKeyInfo struct {
 	vaultURL   string
 	keyName    string
 	keyVersion string
 }
 
-type EncryptionClient struct {
-	kvClient *keyvault.BaseClient
-	kvInfo   *KeyVaultKeyInfo
+type KeyVaultAlgorithmParameters struct {
+	keySizeBits           int
+	encryptBlockSizeBytes int
+	decryptBlockSizeBytes int
+	kvAlgorithm           keyvault.JSONWebKeyEncryptionAlgorithm
 }
 
 func NewEncryptionClient(keyVaultKeyIdentifier string, kvClient *keyvault.BaseClient) (*EncryptionClient, error) {
+	if kvClient == nil {
+		return &EncryptionClient{}, fmt.Errorf("kvClient cannot be nil")
+	}
+
 	kvInfo, err := parseKeyVaultKeyInfo(keyVaultKeyIdentifier)
 	if err != nil {
 		return &EncryptionClient{}, err
 	}
 
-	return &EncryptionClient{kvClient, kvInfo}, nil
+	kvAlgorithm := getKeyVaultAlgorithmParameters(keyvault.RSA15, 2048)
+
+	return &EncryptionClient{kvClient, kvInfo, kvAlgorithm}, nil
 }
 
 func parseKeyVaultKeyInfo(keyVaultKeyIdentifier string) (*KeyVaultKeyInfo, error) {
@@ -45,6 +59,24 @@ func parseKeyVaultKeyInfo(keyVaultKeyIdentifier string) (*KeyVaultKeyInfo, error
 	return &info, nil
 }
 
+func getKeyVaultAlgorithmParameters(algorithm keyvault.JSONWebKeyEncryptionAlgorithm, keySizeBits int) *KeyVaultAlgorithmParameters {
+	kp := &KeyVaultAlgorithmParameters{kvAlgorithm: algorithm, keySizeBits: keySizeBits}
+
+	switch algorithm {
+	case keyvault.RSA15:
+		kp.encryptBlockSizeBytes = (keySizeBits - 88) / 8
+		kp.encryptBlockSizeBytes = 342
+	case keyvault.RSAOAEP:
+		kp.encryptBlockSizeBytes = (keySizeBits - 336) / 8
+		kp.encryptBlockSizeBytes = 342
+	case keyvault.RSAOAEP256:
+		kp.encryptBlockSizeBytes = (keySizeBits - 496) / 8
+		kp.encryptBlockSizeBytes = 342
+	}
+
+	return kp
+}
+
 func (e *EncryptionClient) getKeyOperationsParameters(value *string) keyvault.KeyOperationsParameters {
 	parameters := keyvault.KeyOperationsParameters{}
 	parameters.Algorithm = keyvault.RSA15
@@ -52,7 +84,7 @@ func (e *EncryptionClient) getKeyOperationsParameters(value *string) keyvault.Ke
 	return parameters
 }
 
-func (e *EncryptionClient) EncryptByteBlock(ctx context.Context, data []byte) ([]byte, error) {
+func (e *EncryptionClient) encryptByteBlock(ctx context.Context, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}
@@ -68,7 +100,7 @@ func (e *EncryptionClient) EncryptByteBlock(ctx context.Context, data []byte) ([
 	return []byte(*result.Result), nil
 }
 
-func (e *EncryptionClient) DecryptByteBlock(ctx context.Context, data []byte) ([]byte, error) {
+func (e *EncryptionClient) decryptByteBlock(ctx context.Context, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}
@@ -91,18 +123,18 @@ func (e *EncryptionClient) DecryptByteBlock(ctx context.Context, data []byte) ([
 
 func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, error) {
 	final := make([]byte, 0)
-	c := 245
+	c := e.kvAlgorithm.encryptBlockSizeBytes
 	n := len(data) / c
 	for i := 0; i < n; i++ {
 		d := data[i*c : (i+1)*c]
-		res, err := e.EncryptByteBlock(ctx, d)
+		res, err := e.encryptByteBlock(ctx, d)
 		if err != nil {
 			return nil, err
 		}
 		final = append(final, res...)
 	}
 	d := data[n*c : len(data)]
-	res, err := e.EncryptByteBlock(ctx, d)
+	res, err := e.encryptByteBlock(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -112,18 +144,18 @@ func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, er
 
 func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, error) {
 	final := make([]byte, 0)
-	c := 342
+	c := e.kvAlgorithm.decryptBlockSizeBytes
 	n := len(data) / c
 	for i := 0; i < n; i++ {
 		d := data[i*c : (i+1)*c]
-		res, err := e.DecryptByteBlock(ctx, d)
+		res, err := e.decryptByteBlock(ctx, d)
 		if err != nil {
 			return nil, err
 		}
 		final = append(final, res...)
 	}
 	d := data[n*c : len(data)]
-	res, err := e.DecryptByteBlock(ctx, d)
+	res, err := e.decryptByteBlock(ctx, d)
 	if err != nil {
 		return nil, err
 	}
