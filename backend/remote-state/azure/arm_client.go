@@ -11,7 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/profiles/2017-03-09/resources/mgmt/resources"
 	armStorage "github.com/Azure/azure-sdk-for-go/profiles/2017-03-09/storage/mgmt/storage"
-	armKeyVault "github.com/Azure/azure-sdk-for-go/services/keyvault/2016-10-01/keyvault"
+	"github.com/Azure/azure-sdk-for-go/services/keyvault/2016-10-01/keyvault"
 
 	"github.com/Azure/azure-sdk-for-go/storage"
 	"github.com/Azure/go-autorest/autorest"
@@ -25,13 +25,14 @@ type ArmClient struct {
 	// These Clients are only initialized if an Access Key isn't provided
 	groupsClient          *resources.GroupsClient
 	storageAccountsClient *armStorage.AccountsClient
-	kvClient              *armKeyVault.BaseClient
 
 	accessKey          string
 	environment        azure.Environment
 	resourceGroupName  string
 	storageAccountName string
 	sasToken           string
+
+	encClient *EncryptionClient
 }
 
 func buildArmClient(config BackendConfig) (*ArmClient, error) {
@@ -95,6 +96,32 @@ func buildArmClient(config BackendConfig) (*ArmClient, error) {
 	groupsClient := resources.NewGroupsClientWithBaseURI(env.ResourceManagerEndpoint, armConfig.SubscriptionID)
 	client.configureClient(&groupsClient.Client, auth)
 	client.groupsClient = &groupsClient
+
+	if config.KeyVaultKeyIdentifier != "" {
+		vaultEndpoint := strings.TrimSuffix(env.KeyVaultEndpoint, "/")
+		alternateEndpoint, _ := url.Parse("https://login.windows.net/" + armConfig.TenantID + "/oauth2/token")
+
+		oauthConfigKV, err := adal.NewOAuthConfig(env.ActiveDirectoryEndpoint, armConfig.TenantID)
+		if err != nil {
+			return nil, err
+		}
+
+		oauthConfigKV.AuthorizeEndpoint = *alternateEndpoint
+
+		authKV, err := armConfig.GetAuthorizationToken(oauthConfigKV, vaultEndpoint)
+		if err != nil {
+			return nil, err
+		}
+
+		kvClient := keyvault.New()
+		client.configureClient(&kvClient.Client, authKV)
+
+		encClient, err := NewEncryptionClient(config.KeyVaultKeyIdentifier, &kvClient)
+		if err != nil {
+			return nil, err
+		}
+		client.encClient = encClient
+	}
 
 	return &client, nil
 }

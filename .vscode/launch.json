@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch",
+            "name": "Init",
             "type": "go",
             "request": "launch",
             "mode": "auto",
@@ -13,7 +13,43 @@
             "env": {
                 "cccf35992f8f3cd8d1d28f0109dd953e26664531": "7c28215aca87789f95b406b8dd91aa5198406750"
             },
-            "args": ["plan", "/my_terraform_config_file_directory"],
+            "args": ["init"],
+            "showLog": true
+        },
+        {
+            "name": "Plan",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceRoot}",
+            "env": {
+                "cccf35992f8f3cd8d1d28f0109dd953e26664531": "7c28215aca87789f95b406b8dd91aa5198406750"
+            },
+            "args": ["plan", "C:/terraform" ],
+            "showLog": true
+        },
+        {
+            "name": "Apply",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceRoot}",
+            "env": {
+                "cccf35992f8f3cd8d1d28f0109dd953e26664531": "7c28215aca87789f95b406b8dd91aa5198406750"
+            },
+            "args": ["apply", "-auto-approve", "C:/terraform", ],
+            "showLog": true
+        },
+        {
+            "name": "Destroy",
+            "type": "go",
+            "request": "launch",
+            "mode": "auto",
+            "program": "${workspaceRoot}",
+            "env": {
+                "cccf35992f8f3cd8d1d28f0109dd953e26664531": "7c28215aca87789f95b406b8dd91aa5198406750"
+            },
+            "args": ["destroy", "C:/terraform"],
             "showLog": true
         }
     ]
