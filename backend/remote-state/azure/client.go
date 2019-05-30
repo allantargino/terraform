@@ -57,8 +57,8 @@ func (c *RemoteClient) Get() (*remote.Payload, error) {
 		return nil, fmt.Errorf("Failed to read remote state: %s", err)
 	}
 
-	// TODO: INSERT DECRYPT OPERATION
 	dataProcessed := buf.Bytes()
+	// Decrypt operation if Key Vault key is provided
 	if c.encClient != nil {
 		ctx := context.TODO()
 		dataProcessed, err = c.encClient.DecryptByteBlock(ctx, buf.Bytes())
@@ -90,6 +90,7 @@ func (c *RemoteClient) Put(data []byte) error {
 
 	var err error
 	dataProcessed := data
+	// Encrypt operation if Key Vault key is provided
 	if c.encClient != nil {
 		dataProcessed, err = c.encClient.EncryptByteBlock(ctx, data)
 		if err != nil {

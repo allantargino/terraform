@@ -218,10 +218,6 @@ func (b *Backend) configure(ctx context.Context) error {
 		return fmt.Errorf("Either an Access Key / SAS Token or the Resource Group for the Storage Account must be specified")
 	}
 
-	// if config.KeyVaultKeyIdentifier != "" && armClient.kvClient == nil {
-	// 	return fmt.Errorf("If a Key Vault Key Identifier is present, you also must authenticate using a Service Principal, Azure CLI or MSI")
-	// }
-
 	b.armClient = armClient
 	return nil
 }
