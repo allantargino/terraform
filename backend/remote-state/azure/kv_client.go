@@ -52,7 +52,7 @@ func (e *EncryptionClient) getKeyOperationsParameters(value *string) keyvault.Ke
 	return parameters
 }
 
-func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, error) {
+func (e *EncryptionClient) EncryptByteBlock(ctx context.Context, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}
@@ -68,7 +68,7 @@ func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, er
 	return []byte(*result.Result), nil
 }
 
-func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, error) {
+func (e *EncryptionClient) DecryptByteBlock(ctx context.Context, data []byte) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
 	}
@@ -89,20 +89,20 @@ func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, er
 	return decoded, nil
 }
 
-func (e *EncryptionClient) EncryptByteBlock(ctx context.Context, data []byte) ([]byte, error) {
+func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, error) {
 	final := make([]byte, 0)
 	c := 245
 	n := len(data) / c
 	for i := 0; i < n; i++ {
 		d := data[i*c : (i+1)*c]
-		res, err := e.Encrypt(ctx, d)
+		res, err := e.EncryptByteBlock(ctx, d)
 		if err != nil {
 			return nil, err
 		}
 		final = append(final, res...)
 	}
 	d := data[n*c : len(data)]
-	res, err := e.Encrypt(ctx, d)
+	res, err := e.EncryptByteBlock(ctx, d)
 	if err != nil {
 		return nil, err
 	}
@@ -110,20 +110,20 @@ func (e *EncryptionClient) EncryptByteBlock(ctx context.Context, data []byte) ([
 	return final, nil
 }
 
-func (e *EncryptionClient) DecryptByteBlock(ctx context.Context, data []byte) ([]byte, error) {
+func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, error) {
 	final := make([]byte, 0)
 	c := 342
 	n := len(data) / c
 	for i := 0; i < n; i++ {
 		d := data[i*c : (i+1)*c]
-		res, err := e.Decrypt(ctx, d)
+		res, err := e.DecryptByteBlock(ctx, d)
 		if err != nil {
 			return nil, err
 		}
 		final = append(final, res...)
 	}
 	d := data[n*c : len(data)]
-	res, err := e.Decrypt(ctx, d)
+	res, err := e.DecryptByteBlock(ctx, d)
 	if err != nil {
 		return nil, err
 	}
