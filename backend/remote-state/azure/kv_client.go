@@ -14,7 +14,7 @@ import (
 
 // EncryptionClient provides methods to encrypt and decrypt data using Azure Key Vault
 type EncryptionClient struct {
-	kvClient              *keyvault.BaseClient
+	KvClient              *keyvault.BaseClient
 	kvInfo                *KeyVaultKeyInfo
 	kvAlgorithmParameters *KeyVaultAlgorithmParameters
 }
@@ -45,26 +45,7 @@ func NewEncryptionClient(keyVaultKeyIdentifier string, kvClient *keyvault.BaseCl
 		return nil, err
 	}
 
-	keyDetails, err := getKeyVaultKeyDetails(kvClient, kvInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	pubKey, err := generatePublicKeyFromKeyBundle(keyDetails)
-	if err != nil {
-		return nil, err
-	}
-
-	err = validateKeyVaultKeyDetails(keyDetails, pubKey)
-	if err != nil {
-		return nil, err
-	}
-
-	keySizeBits := pubKey.Size() * 8
-
-	kvAlgorithm := getKeyVaultAlgorithmParameters(keyvault.RSA15, keySizeBits)
-
-	return &EncryptionClient{kvClient, kvInfo, kvAlgorithm}, nil
+	return &EncryptionClient{KvClient: kvClient, kvInfo: kvInfo}, nil
 }
 
 func parseKeyVaultKeyInfo(keyVaultKeyIdentifier string) (*KeyVaultKeyInfo, error) {
@@ -83,8 +64,8 @@ func parseKeyVaultKeyInfo(keyVaultKeyIdentifier string) (*KeyVaultKeyInfo, error
 	return &info, nil
 }
 
-func getKeyVaultKeyDetails(kvClient *keyvault.BaseClient, kvInfo *KeyVaultKeyInfo) (*keyvault.KeyBundle, error) {
-	keyBundle, err := kvClient.GetKey(context.TODO(), kvInfo.vaultURL, kvInfo.keyName, kvInfo.keyVersion)
+func (e *EncryptionClient) getKeyVaultKeyDetails() (*keyvault.KeyBundle, error) {
+	keyBundle, err := e.KvClient.GetKey(context.TODO(), e.kvInfo.vaultURL, e.kvInfo.keyName, e.kvInfo.keyVersion)
 
 	if err != nil {
 		return nil, err
@@ -165,6 +146,29 @@ func getKeyVaultAlgorithmParameters(algorithm keyvault.JSONWebKeyEncryptionAlgor
 	return kp
 }
 
+func (e *EncryptionClient) fillKeyDetails() error {
+	keyDetails, err := e.getKeyVaultKeyDetails()
+	if err != nil {
+		return err
+	}
+
+	pubKey, err := generatePublicKeyFromKeyBundle(keyDetails)
+	if err != nil {
+		return err
+	}
+
+	err = validateKeyVaultKeyDetails(keyDetails, pubKey)
+	if err != nil {
+		return err
+	}
+
+	keySizeBits := pubKey.Size() * 8
+
+	e.kvAlgorithmParameters = getKeyVaultAlgorithmParameters(keyvault.RSA15, keySizeBits)
+
+	return nil
+}
+
 func (e *EncryptionClient) buildKeyOperationsParameters(value *string) keyvault.KeyOperationsParameters {
 	parameters := keyvault.KeyOperationsParameters{}
 	parameters.Algorithm = e.kvAlgorithmParameters.kvAlgorithm
@@ -177,10 +181,17 @@ func (e *EncryptionClient) encryptByteBlock(ctx context.Context, data []byte) ([
 		return data, nil
 	}
 
+	// Lazy loading for key details
+	if e.kvAlgorithmParameters == nil {
+		if err := e.fillKeyDetails(); err != nil {
+			return nil, err
+		}
+	}
+
 	encoded := base64.RawStdEncoding.EncodeToString(data)
 
 	parameters := e.buildKeyOperationsParameters(&encoded)
-	result, err := e.kvClient.Encrypt(ctx, e.kvInfo.vaultURL, e.kvInfo.keyName, e.kvInfo.keyVersion, parameters)
+	result, err := e.KvClient.Encrypt(ctx, e.kvInfo.vaultURL, e.kvInfo.keyName, e.kvInfo.keyVersion, parameters)
 	if err != nil {
 		return nil, err
 	}
@@ -193,10 +204,17 @@ func (e *EncryptionClient) decryptByteBlock(ctx context.Context, data []byte) ([
 		return data, nil
 	}
 
+	// Lazy loading for key details
+	if e.kvAlgorithmParameters == nil {
+		if err := e.fillKeyDetails(); err != nil {
+			return nil, err
+		}
+	}
+
 	str := string(data)
 
 	parameters := e.buildKeyOperationsParameters(&str)
-	result, err := e.kvClient.Decrypt(ctx, e.kvInfo.vaultURL, e.kvInfo.keyName, e.kvInfo.keyVersion, parameters)
+	result, err := e.KvClient.Decrypt(ctx, e.kvInfo.vaultURL, e.kvInfo.keyName, e.kvInfo.keyVersion, parameters)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +230,11 @@ func (e *EncryptionClient) decryptByteBlock(ctx context.Context, data []byte) ([
 // Encrypt takes a []byte as input and calls Azure Key Vault to encrypt it using a previous defined asymmetric key
 func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, error) {
 	final := make([]byte, 0)
+
+	if len(data) == 0 {
+		return final, nil
+	}
+
 	c := e.kvAlgorithmParameters.encryptBlockSizeBytes
 	n := len(data) / c
 	for i := 0; i < n; i++ {
@@ -234,6 +257,11 @@ func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, er
 // Decrypt takes a []byte as input and calls Azure Key Vault to decrypt it using a previous defined asymmetric key
 func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, error) {
 	final := make([]byte, 0)
+
+	if len(data) == 0 {
+		return final, nil
+	}
+
 	c := e.kvAlgorithmParameters.decryptBlockSizeBytes
 	n := len(data) / c
 	for i := 0; i < n; i++ {

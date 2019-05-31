@@ -1,14 +1,21 @@
 package azure
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/hashicorp/terraform/helper/acctest"
 	"github.com/Azure/azure-sdk-for-go/services/keyvault/2016-10-01/keyvault"
 )
 
+// Unit Tests
+
 func TestParseKeyVaultKeyInfoValid(t *testing.T) {
+	testAccAzureBackend(t)
+
 	cases := map[string]*KeyVaultKeyInfo{
 		"https://keyvaultname.vault.azure.net/keys/myKey/99d67321dd9841af859129cd5551a871": &KeyVaultKeyInfo{
 			vaultURL:   "https://keyvaultname.vault.azure.net",
@@ -49,6 +56,8 @@ func TestParseKeyVaultKeyInfoValid(t *testing.T) {
 }
 
 func TestParseKeyVaultKeyInfoInvalid(t *testing.T) {
+	testAccAzureBackend(t)
+
 	errorCases := []string{
 		"",
 		" ",
@@ -69,7 +78,30 @@ func TestParseKeyVaultKeyInfoInvalid(t *testing.T) {
 	}
 }
 
+func TestCreateEncryptClientValid(t *testing.T) {
+	keyVaultKeyIdentifier := "https://keyvaultname.vault.azure.net/keys/myKey/99d67321dd9841af859129cd5551a871"
+	kvClient := &keyvault.BaseClient{}
+
+	_, err := NewEncryptionClient(keyVaultKeyIdentifier, kvClient)
+
+	if err != nil {
+		t.Errorf("Error when creating EncryptionClient: %v", err)
+	}
+}
+
+func TestCreateEncryptClientInvalid(t *testing.T) {
+	keyVaultKeyIdentifier := "https://keyvaultname.vault.azure.net/keys/myKey/99d67321dd9841af859129cd5551a871"
+
+	_, err := NewEncryptionClient(keyVaultKeyIdentifier, nil)
+
+	if err == nil {
+		t.Errorf("Error when creating EncryptionClient. Expected an error.")
+	}
+}
+
 func TestGeneratePublicKeyFromKeyBundle(t *testing.T){
+	testAccAzureBackend(t)
+
 	cases := []struct {
 		n      string
 		e      string
@@ -117,6 +149,8 @@ func TestGeneratePublicKeyFromKeyBundle(t *testing.T){
 }
 
 func TestValidateKeyVaultKeyDetails(t *testing.T) {
+	testAccAzureBackend(t)
+
 	isEnabled := true
 	keyID := "https://vaultname.vault.azure.net/keys/key2048/b5c419ae7aa847459c5f72719dfe522e"
 	keyOps := []string{"encrypt", "decrypt"}
@@ -279,6 +313,8 @@ func TestValidateKeyVaultKeyDetails(t *testing.T) {
 }
 
 func TestGetKeyVaultAlgorithmParameters(t *testing.T) {
+	testAccAzureBackend(t)
+
 	t.Run("RSA15", func(t *testing.T) {
 		expected := map[int]*KeyVaultAlgorithmParameters{
 			2048: &KeyVaultAlgorithmParameters{encryptBlockSizeBytes: 245, decryptBlockSizeBytes: 342},
@@ -311,6 +347,8 @@ func TestGetKeyVaultAlgorithmParameters(t *testing.T) {
 }
 
 func testGetKeyVaultAlgorithmParametersWithAlgorithm(t *testing.T, algorithm keyvault.JSONWebKeyEncryptionAlgorithm, expected map[int]*KeyVaultAlgorithmParameters) {
+	testAccAzureBackend(t)
+
 	for size, pe := range expected {
 		pa := getKeyVaultAlgorithmParameters(algorithm, size)
 
@@ -327,4 +365,45 @@ func testGetKeyVaultAlgorithmParametersWithAlgorithm(t *testing.T, algorithm key
 			t.Errorf("Decrypt block size wasn't correct. Expected: %v, Got: %v", pe.decryptBlockSizeBytes, pa.decryptBlockSizeBytes)
 		}
 	}
+}
+
+// Integration Tests
+
+func TestGetKeyVaultKeyDetails(t * testing.T){
+	testAccAzureBackend(t)
+
+	rs := acctest.RandString(4)
+	
+	keyVaultName := fmt.Sprintf("keyvaultterraform%s", rs)
+	keyName := "myKey"
+
+	res := testResourceNamesWithKeyVault(rs, "testState", keyVaultName, keyName)
+	armClient := buildTestClientWithKeyVault(t, res, keyIdentifier)
+
+	ctx := context.TODO()
+	err := armClient.buildTestResources(ctx, &res)
+	defer armClient.destroyTestResources(ctx, res)
+	if err != nil {
+		armClient.destroyTestResources(ctx, res)
+		t.Fatalf("Error creating Test Resources: %q", err)
+	}
+}
+
+func TestEncryptByteBlock(t * testing.T){
+	testAccAzureBackend(t)
+
+}
+
+func TestDecryptByteBlock(t * testing.T){
+	testAccAzureBackend(t)
+
+}
+
+func TestEncrypt(t * testing.T){
+	testAccAzureBackend(t)
+	
+}
+
+func TestDecrypt(t * testing.T){
+	
 }

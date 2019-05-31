@@ -13,6 +13,8 @@ import (
 	armStorage "github.com/Azure/azure-sdk-for-go/profiles/2017-03-09/storage/mgmt/storage"
 	"github.com/Azure/azure-sdk-for-go/storage"
 	sasStorage "github.com/hashicorp/go-azure-helpers/storage"
+
+	"github.com/Azure/azure-sdk-for-go/services/keyvault/mgmt/2016-10-01/keyvault"
 )
 
 const (
@@ -38,7 +40,7 @@ func testAccAzureBackendRunningInAzure(t *testing.T) {
 	}
 }
 
-func buildTestClient(t *testing.T, res resourceNames) *ArmClient {
+func getDefaultBackendConfig(t *testing.T, resourceGroup, storageAccountName, keyVaultKeyIdentifier string) *BackendConfig {
 	subscriptionID := os.Getenv("ARM_SUBSCRIPTION_ID")
 	tenantID := os.Getenv("ARM_TENANT_ID")
 	clientID := os.Getenv("ARM_CLIENT_ID")
@@ -72,17 +74,26 @@ func buildTestClient(t *testing.T, res resourceNames) *ArmClient {
 	// Endpoint is optional (only for Stack)
 	endpoint := os.Getenv("ARM_ENDPOINT")
 
-	armClient, err := buildArmClient(BackendConfig{
+	backend := &BackendConfig{
 		SubscriptionID:                subscriptionID,
 		TenantID:                      tenantID,
 		ClientID:                      clientID,
 		ClientSecret:                  clientSecret,
 		CustomResourceManagerEndpoint: endpoint,
 		Environment:                   environment,
-		ResourceGroupName:             res.resourceGroup,
-		StorageAccountName:            res.storageAccountName,
+		ResourceGroupName:             resourceGroup,
+		StorageAccountName:            storageAccountName,
+		KeyVaultKeyIdentifier:         keyVaultKeyIdentifier,
 		UseMsi:                        msiEnabled,
-	})
+	}
+
+	return backend
+}
+
+func buildTestClient(t *testing.T, res resourceNames) *ArmClient {
+	backendConfig := getDefaultBackendConfig(t, res.resourceGroup, res.storageAccountName, "")
+
+	armClient, err := buildArmClient(*backendConfig)
 	if err != nil {
 		t.Fatalf("Failed to build ArmClient: %+v", err)
 	}
@@ -124,6 +135,8 @@ type resourceNames struct {
 	storageContainerName    string
 	storageKeyName          string
 	storageAccountAccessKey string
+	keyVaultName            string
+	keyVaultKeyName         string
 }
 
 func testResourceNames(rString string, keyName string) resourceNames {
@@ -183,6 +196,33 @@ func (c *ArmClient) buildTestResources(ctx context.Context, names *resourceNames
 		return fmt.Errorf("failed to create storage container: %s", err)
 	}
 
+	// Azure Key Vault
+	if names.keyVaultName != "" && names.keyVaultKeyName != "" {
+		vaultsClient := keyvault.NewVaultsClient(os.Getenv("ARM_SUBSCRIPTION_ID"))
+		vaultsClient.Authorizer = c.groupsClient.Authorizer
+		vaultsClient.AddToUserAgent(c.groupsClient.UserAgent)
+
+		tenantID := os.Getenv("ARM_TENANT_ID")
+
+		vaultsClient.CreateOrUpdate(
+			ctx,
+			names.resourceGroup
+			vaultName,
+			keyvault.VaultCreateOrUpdateParameters{
+				Location: to.StringPtr(names.location),
+				Properties: &keyvault.VaultProperties{
+					TenantID: &tenantID,
+					Sku: &keyvault.Sku{
+						Family: to.StringPtr("A"),
+						Name:   keyvault.Standard,
+					},
+					AccessPolicies: &[]keyvault.AccessPolicyEntry{},
+				},
+			},
+		)
+	}
+	}
+
 	return nil
 }
 
@@ -200,4 +240,25 @@ func (c ArmClient) destroyTestResources(ctx context.Context, resources resourceN
 	}
 
 	return nil
+}
+
+func testResourceNamesWithKeyVault(rString, storageKeyName, keyVaultName, keyVaultKeyName string) resourceNames {
+	resources := testResourceNames(rString, storageKeyName)
+	resources.keyVaultName = keyVaultName
+	resources.keyVaultKeyName = keyVaultKeyName
+
+	return resources
+}
+
+func buildTestClientWithKeyVault(t *testing.T, res resourceNames) *ArmClient {
+	keyIdentifier := fmt.Sprintf("https://%s.vault.azure.net/keys/%s", res.keyVaultName, res.keyVaultKeyName)
+
+	backendConfig := getDefaultBackendConfig(t, res.resourceGroup, res.storageAccountName, keyIdentifier)
+
+	armClient, err := buildArmClient(*backendConfig)
+	if err != nil {
+		t.Fatalf("Failed to build ArmClient: %+v", err)
+	}
+
+	return armClient
 }
