@@ -267,7 +267,7 @@ func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, er
 		}
 		encrypted = append(encrypted, res...)
 	}
-	d := data[n*c : len(data)]
+	d := data[n*c:]
 	res, err := e.encryptByteBlock(ctx, d)
 	if err != nil {
 		return nil, err
@@ -319,7 +319,7 @@ func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, er
 		}
 		decrypted = append(decrypted, res...)
 	}
-	d := encrypted[n*c : len(encrypted)]
+	d := encrypted[n*c:]
 	res, err := e.decryptByteBlock(ctx, d)
 	if err != nil {
 		return nil, err
