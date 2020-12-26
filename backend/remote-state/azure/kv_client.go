@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -21,9 +22,9 @@ type EncryptionClient struct {
 
 // KeyVaultKeyInfo stores information about Azure Key Vault service
 type KeyVaultKeyInfo struct {
-	vaultURL   string
-	keyName    string
-	keyVersion string
+	VaultURL   string `json:"vault_url"`
+	KeyName    string `json:"key_name"`
+	KeyVersion string `json:"key_version"`
 }
 
 // KeyVaultAlgorithmParameters contains details about the public key size, algorithm to be used and encrypt/decrypt maximum block sizes
@@ -32,6 +33,12 @@ type KeyVaultAlgorithmParameters struct {
 	encryptBlockSizeBytes int
 	decryptBlockSizeBytes int
 	kvAlgorithm           keyvault.JSONWebKeyEncryptionAlgorithm
+}
+
+// StoredEncryptedState is the object stored on Azure blob storage
+type StoredEncryptedState struct {
+	KeyInfo        *KeyVaultKeyInfo `json:"key_info"`
+	EncryptedState []byte           `json:"encrypted_state"`
 }
 
 // NewEncryptionClient creates an EncryptionClient from a Key Vault key identifier and a Key Vault client
@@ -57,9 +64,9 @@ func parseKeyVaultKeyInfo(keyVaultKeyIdentifier string) (*KeyVaultKeyInfo, error
 	}
 
 	info := KeyVaultKeyInfo{}
-	info.vaultURL = fmt.Sprintf("https://%s.vault.azure.net", str[1])
-	info.keyName = str[2]
-	info.keyVersion = str[3]
+	info.VaultURL = fmt.Sprintf("https://%s.vault.azure.net", str[1])
+	info.KeyName = str[2]
+	info.KeyVersion = str[3]
 
 	return &info, nil
 }
@@ -137,7 +144,7 @@ func getKeyVaultAlgorithmParameters(algorithm keyvault.JSONWebKeyEncryptionAlgor
 }
 
 func (e *EncryptionClient) getKeyVaultKeyDetails(ctx context.Context) (*keyvault.KeyBundle, error) {
-	keyBundle, err := e.KvClient.GetKey(ctx, e.kvInfo.vaultURL, e.kvInfo.keyName, e.kvInfo.keyVersion)
+	keyBundle, err := e.KvClient.GetKey(ctx, e.kvInfo.VaultURL, e.kvInfo.KeyName, e.kvInfo.KeyVersion)
 
 	if err != nil {
 		return nil, err
@@ -195,7 +202,7 @@ func (e *EncryptionClient) encryptByteBlock(ctx context.Context, data []byte) ([
 	encoded := base64.RawStdEncoding.EncodeToString(data)
 
 	parameters := e.buildKeyOperationsParameters(&encoded)
-	result, err := e.KvClient.Encrypt(ctx, e.kvInfo.vaultURL, e.kvInfo.keyName, e.kvInfo.keyVersion, parameters)
+	result, err := e.KvClient.Encrypt(ctx, e.kvInfo.VaultURL, e.kvInfo.KeyName, e.kvInfo.KeyVersion, parameters)
 	if err != nil {
 		return nil, err
 	}
@@ -222,7 +229,7 @@ func (e *EncryptionClient) decryptByteBlock(ctx context.Context, data []byte) ([
 	str := string(data)
 
 	parameters := e.buildKeyOperationsParameters(&str)
-	result, err := e.KvClient.Decrypt(ctx, e.kvInfo.vaultURL, e.kvInfo.keyName, e.kvInfo.keyVersion, parameters)
+	result, err := e.KvClient.Decrypt(ctx, e.kvInfo.VaultURL, e.kvInfo.KeyName, e.kvInfo.KeyVersion, parameters)
 	if err != nil {
 		return nil, err
 	}
@@ -237,10 +244,10 @@ func (e *EncryptionClient) decryptByteBlock(ctx context.Context, data []byte) ([
 
 // Encrypt takes a []byte as input and calls Azure Key Vault to encrypt it using a previous defined asymmetric key
 func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, error) {
-	final := make([]byte, 0)
+	encrypted := make([]byte, 0)
 
 	if len(data) == 0 {
-		return final, nil
+		return encrypted, nil
 	}
 
 	// Lazy loading for key details
@@ -258,23 +265,41 @@ func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, er
 		if err != nil {
 			return nil, err
 		}
-		final = append(final, res...)
+		encrypted = append(encrypted, res...)
 	}
 	d := data[n*c : len(data)]
 	res, err := e.encryptByteBlock(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	final = append(final, res...)
-	return final, nil
+	encrypted = append(encrypted, res...)
+
+	stored := &StoredEncryptedState{KeyInfo: e.kvInfo, EncryptedState: encrypted}
+	b, err := json.Marshal(stored)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 // Decrypt takes a []byte as input and calls Azure Key Vault to decrypt it using a previous defined asymmetric key
 func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, error) {
-	final := make([]byte, 0)
+	decrypted := make([]byte, 0)
 
 	if len(data) == 0 {
-		return final, nil
+		return decrypted, nil
+	}
+
+	var stored StoredEncryptedState
+	err := json.Unmarshal(data, &stored)
+	if err != nil {
+		return nil, err
+	}
+
+	encrypted := stored.EncryptedState
+
+	if len(encrypted) == 0 {
+		return decrypted, nil
 	}
 
 	// Lazy loading for key details
@@ -285,20 +310,21 @@ func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, er
 	}
 
 	c := e.kvAlgorithmParameters.decryptBlockSizeBytes
-	n := len(data) / c
+	n := len(encrypted) / c
 	for i := 0; i < n; i++ {
-		d := data[i*c : (i+1)*c]
+		d := encrypted[i*c : (i+1)*c]
 		res, err := e.decryptByteBlock(ctx, d)
 		if err != nil {
 			return nil, err
 		}
-		final = append(final, res...)
+		decrypted = append(decrypted, res...)
 	}
-	d := data[n*c : len(data)]
+	d := encrypted[n*c : len(encrypted)]
 	res, err := e.decryptByteBlock(ctx, d)
 	if err != nil {
 		return nil, err
 	}
-	final = append(final, res...)
-	return final, nil
+	decrypted = append(decrypted, res...)
+
+	return decrypted, nil
 }

@@ -18,29 +18,29 @@ func TestParseKeyVaultKeyInfoValid(t *testing.T) {
 
 	cases := map[string]*KeyVaultKeyInfo{
 		"https://keyvaultname.vault.azure.net/keys/myKey/99d67321dd9841af859129cd5551a871": &KeyVaultKeyInfo{
-			vaultURL:   "https://keyvaultname.vault.azure.net",
-			keyName:    "myKey",
-			keyVersion: "99d67321dd9841af859129cd5551a871",
+			VaultURL:   "https://keyvaultname.vault.azure.net",
+			KeyName:    "myKey",
+			KeyVersion: "99d67321dd9841af859129cd5551a871",
 		},
 		"https://keyvaultname.vault.azure.net/keys/myKey/99d67321dd9841af859129cd5551a871/": &KeyVaultKeyInfo{
-			vaultURL:   "https://keyvaultname.vault.azure.net",
-			keyName:    "myKey",
-			keyVersion: "99d67321dd9841af859129cd5551a871",
+			VaultURL:   "https://keyvaultname.vault.azure.net",
+			KeyName:    "myKey",
+			KeyVersion: "99d67321dd9841af859129cd5551a871",
 		},
 		"http://abcde.vault.azure.net/keys/myKey/8120938102983": &KeyVaultKeyInfo{
-			vaultURL:   "https://abcde.vault.azure.net",
-			keyName:    "myKey",
-			keyVersion: "8120938102983",
+			VaultURL:   "https://abcde.vault.azure.net",
+			KeyName:    "myKey",
+			KeyVersion: "8120938102983",
 		},
 		"https://keyvaultname.vault.azure.net/keys/myKey/": &KeyVaultKeyInfo{
-			vaultURL:   "https://keyvaultname.vault.azure.net",
-			keyName:    "myKey",
-			keyVersion: "",
+			VaultURL:   "https://keyvaultname.vault.azure.net",
+			KeyName:    "myKey",
+			KeyVersion: "",
 		},
 		"https://keyvaultname.vault.azure.net/keys/myKey": &KeyVaultKeyInfo{
-			vaultURL:   "https://keyvaultname.vault.azure.net",
-			keyName:    "myKey",
-			keyVersion: "",
+			VaultURL:   "https://keyvaultname.vault.azure.net",
+			KeyName:    "myKey",
+			KeyVersion: "",
 		},
 	}
 
