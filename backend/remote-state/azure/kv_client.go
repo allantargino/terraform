@@ -31,7 +31,7 @@ type KeyVaultKey struct {
 type EncryptionKey struct {
 	Algorithm string `json:"algorithm"`
 	Mode      string `json:"mode"`
-	Key       []byte `json:"key"`
+	Key       string `json:"key"`
 	Nonce     []byte `json:"nonce"`
 }
 
@@ -92,7 +92,7 @@ func (e *EncryptionClient) Encrypt(ctx context.Context, data []byte) ([]byte, er
 		EncryptionKey: &EncryptionKey{
 			Algorithm: "AES-256",
 			Mode:      "GCM",
-			Key:       wrappedKey,
+			Key:       *wrappedKey,
 			Nonce:     nonce,
 		},
 		EncryptedState: encrypted,
@@ -117,7 +117,7 @@ func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, er
 		return nil, err
 	}
 
-	key, err := e.unwrapKey(ctx, blob.EncryptionKey.Key)
+	key, err := e.unwrapKey(ctx, &blob.EncryptionKey.Key)
 	if err != nil {
 		return nil, err
 	}
@@ -130,12 +130,12 @@ func (e *EncryptionClient) Decrypt(ctx context.Context, data []byte) ([]byte, er
 	return decrypted, nil
 }
 
-func (e *EncryptionClient) wrapKey(ctx context.Context, key []byte) ([]byte, error) {
+func (e *EncryptionClient) wrapKey(ctx context.Context, key []byte) (*string, error) {
 	if err := e.validateKeyVaultKey(ctx); err != nil {
 		return nil, err
 	}
 
-	keyEncoded := base64.RawStdEncoding.EncodeToString(key)
+	keyEncoded := base64.RawURLEncoding.EncodeToString(key)
 
 	parameters := keyvault.KeyOperationsParameters{
 		Algorithm: keyvault.RSA15,
@@ -151,24 +151,17 @@ func (e *EncryptionClient) wrapKey(ctx context.Context, key []byte) ([]byte, err
 		return nil, fmt.Errorf("Error when wrapping key with Key Vault for Azure Remote State")
 	}
 
-	decoded, err := base64.RawStdEncoding.DecodeString(*result.Result)
-	if err != nil {
-		return nil, err
-	}
-
-	return decoded, nil
+	return result.Result, nil
 }
 
-func (e *EncryptionClient) unwrapKey(ctx context.Context, key []byte) ([]byte, error) {
+func (e *EncryptionClient) unwrapKey(ctx context.Context, key *string) ([]byte, error) {
 	if err := e.validateKeyVaultKey(ctx); err != nil {
 		return nil, err
 	}
 
-	keyEncoded := base64.RawStdEncoding.EncodeToString(key)
-
 	parameters := keyvault.KeyOperationsParameters{
 		Algorithm: keyvault.RSA15,
-		Value:     &keyEncoded,
+		Value:     key,
 	}
 
 	result, err := e.KvClient.UnwrapKey(ctx, e.KvKey.VaultURL, e.KvKey.KeyName, e.KvKey.KeyVersion, parameters)
@@ -180,7 +173,7 @@ func (e *EncryptionClient) unwrapKey(ctx context.Context, key []byte) ([]byte, e
 		return nil, fmt.Errorf("Error when unwrapping key with Key Vault for Azure Remote State")
 	}
 
-	decoded, err := base64.RawStdEncoding.DecodeString(*result.Result)
+	decoded, err := base64.RawURLEncoding.DecodeString(*result.Result)
 	if err != nil {
 		return nil, err
 	}
@@ -194,6 +187,10 @@ func (e *EncryptionClient) validateKeyVaultKey(ctx context.Context) error {
 		return err
 	}
 
+	return validateKeyVaultBundle(keyBundle)
+}
+
+func validateKeyVaultBundle(keyBundle keyvault.KeyBundle) error {
 	if keyBundle.Attributes == nil || keyBundle.Key == nil {
 		return fmt.Errorf("Azure Key Vault key result contains null values")
 	}
