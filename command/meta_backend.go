@@ -102,7 +102,7 @@ func (m *Meta) Backend(opts *BackendOpts) (backend.Enhanced, tfdiags.Diagnostics
 		log.Printf("[TRACE] Meta.Backend: instantiated backend of type %T", b)
 	}
 
-	// Setup the CLI opts we pass into backends that support it.
+	// Set up the CLI opts we pass into backends that support it.
 	cliOpts, err := m.backendCLIOpts()
 	if err != nil {
 		diags = diags.Append(err)
@@ -308,6 +308,7 @@ func (m *Meta) backendCLIOpts() (*backend.CLIOpts, error) {
 	return &backend.CLIOpts{
 		CLI:                 m.Ui,
 		CLIColor:            m.Colorize(),
+		Streams:             m.Streams,
 		ShowDiagnostics:     m.showDiagnostics,
 		StatePath:           m.statePath,
 		StateOutPath:        m.stateOutPath,
@@ -1115,6 +1116,11 @@ func (m *Meta) remoteBackendVersionCheck(b backend.Backend, workspace string) tf
 		// an error
 		versionDiags := rb.VerifyWorkspaceTerraformVersion(workspace)
 		diags = diags.Append(versionDiags)
+		// If there are no errors resulting from this check, we do not need to
+		// check again
+		if !diags.HasErrors() {
+			rb.IgnoreVersionConflict()
+		}
 	}
 
 	return diags
@@ -1200,7 +1206,7 @@ Terraform configuration you're using is using a custom configuration for
 the Terraform backend.
 
 Changes to backend configurations require reinitialization. This allows
-Terraform to setup the new configuration, copy existing state, etc. This is
+Terraform to set up the new configuration, copy existing state, etc. This is
 only done during "terraform init". Please run that command now then try again.
 
 If the change reason above is incorrect, please verify your configuration
